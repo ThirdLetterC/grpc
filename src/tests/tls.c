@@ -3,6 +3,11 @@
 #include <string.h>
 #include "grpc.h"
 #include "unity.h"
+#if defined(GRPC_TLS_OPENSSL) || defined(GRPC_TLS_LIBRESSL) || defined(GRPC_TLS_BORINGSSL) || defined(GRPC_TLS_AWSLC)
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include "internal_tls.h"
+#endif
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -42,10 +47,30 @@ void test_tls_server(void) {
   grpc_server_free(server);
 }
 
+#if defined(GRPC_TLS_OPENSSL) || defined(GRPC_TLS_LIBRESSL) || defined(GRPC_TLS_BORINGSSL) || defined(GRPC_TLS_AWSLC)
+void test_tls_error_isolation(void) {
+  grpc_tls_ctx *ctx = tls_backend_ctx_new("test_cert.pem", "test_key.pem");
+  TEST_ASSERT_NOT_NULL(ctx);
+  grpc_tls_session *session = tls_backend_session_new(ctx);
+  TEST_ASSERT_NOT_NULL(session);
+  /* A failed connection can leave errors on this same event-loop thread. */
+  ERR_put_error(ERR_LIB_SSL, 0, ERR_R_INTERNAL_ERROR, __FILE__, __LINE__);
+  TEST_ASSERT_EQUAL_INT(0, tls_backend_handshake(session));
+  ERR_put_error(ERR_LIB_SSL, 0, ERR_R_INTERNAL_ERROR, __FILE__, __LINE__);
+  char byte;
+  TEST_ASSERT_EQUAL_INT(-2, tls_backend_read(session, &byte, 1));
+  tls_backend_session_free(session);
+  tls_backend_ctx_free(ctx);
+}
+#endif
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_tls_backend);
   RUN_TEST(test_tls_invalid_files);
   RUN_TEST(test_tls_server);
+#if defined(GRPC_TLS_OPENSSL) || defined(GRPC_TLS_LIBRESSL) || defined(GRPC_TLS_BORINGSSL) || defined(GRPC_TLS_AWSLC)
+  RUN_TEST(test_tls_error_isolation);
+#endif
   return UNITY_END();
 }

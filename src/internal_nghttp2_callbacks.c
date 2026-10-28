@@ -13,9 +13,10 @@
 #include "internal_nghttp2_callbacks.h"
 
 static size_t parse_grpc_message(void *data, size_t len, grpc_compression_algorithm encoding,
-                                 grpc_messages **messages) {
+                                 grpc_messages **messages, size_t max_output, bool *too_large) {
   i8 *wire = data;
   *messages = nullptr;
+  *too_large = false;
   /* quick check if there's any message to parse */
   if (len < 5)
     return 0;
@@ -42,7 +43,13 @@ static size_t parse_grpc_message(void *data, size_t len, grpc_compression_algori
     if (cflag == 1) {
       uint8_t *decomp = nullptr;
       size_t decomp_len = 0;
-      if (grpc_decompress(encoding, (const uint8_t *)msg_data, msg_len, &decomp, &decomp_len) == 0) {
+      int result = grpc_decompress_limited(encoding, (const uint8_t *)msg_data, msg_len,
+                                           &decomp, &decomp_len, max_output);
+      if (result == 5) {
+        *too_large = true;
+        return 0;
+      }
+      if (result == 0) {
         msg = message_create(0, decomp, decomp_len);
         grpc_free(decomp);
       } else {
@@ -313,8 +320,18 @@ static inline int on_frame_recv_data(grpc_session *ezsession, const nghttp2_fram
   grpc_call *call = ezstream->call;
 
   grpc_messages *messages;
+  bool too_large = false;
   size_t lseek = parse_grpc_message(ezstream->recv_data + ezstream->recv_start, ezstream->recv_len,
-                                    ezstream->grpc_encoding, &messages);
+                                    ezstream->grpc_encoding, &messages,
+                                    ezsession->server->config.max_message_size > 5
+                                      ? ezsession->server->config.max_message_size - 5 : 0, &too_large);
+  if (too_large) {
+    if (messages != nullptr) grpc_messages_free(messages);
+    ezstream->is_discarding = true;
+    ezstream->recv_len = 0;
+    call_abort(call, GRPC_STATUS_RESOURCE_EXHAUSTED, "decompressed request exceeds server limit");
+    return 0;
+  }
   if (lseek) {
     assert(lseek <= ezstream->recv_len);
     ezstream->recv_start += lseek;

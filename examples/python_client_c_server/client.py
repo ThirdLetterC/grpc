@@ -154,6 +154,18 @@ def main():
         print(f"[client] Received compressed response: '{resp_comp.message}'")
         assert resp_comp.message == "Hello, CompressedClient!"
 
+        # Highly compressible requests must obey the decompressed message limit too.
+        large_request = helloworld_pb2.HelloRequest(name="x" * (2 * 1024 * 1024))
+        for compression in (grpc.Compression.Gzip, grpc.Compression.Deflate):
+            try:
+                stub.SayHello(large_request, compression=compression, timeout=5)
+                assert False, "Expected RESOURCE_EXHAUSTED for excessive decompression"
+            except grpc.RpcError as rpc_err:
+                assert rpc_err.code() == grpc.StatusCode.RESOURCE_EXHAUSTED, rpc_err.code()
+        resp_after_limit = stub.SayHello(helloworld_pb2.HelloRequest(name="AfterLimit"), timeout=5)
+        assert resp_after_limit.message == "Hello, AfterLimit!", resp_after_limit.message
+        print("[client] Compressed request limits preserve the connection")
+
         # 8. A reply from a worker thread, and a deadline that passes first
         print(f"\n[client] 8. Testing replies from a worker thread (SayHelloSlow)...")
         resp_slow = stub.SayHelloSlow(helloworld_pb2.HelloRequest(name="Patient"), timeout=5)

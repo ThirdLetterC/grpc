@@ -4,6 +4,7 @@
 #include <string.h>
 #include <openssl/ssl.h>
 #include <openssl/crypto.h>
+#include <openssl/err.h>
 #include "core.h"
 #include "internal_tls.h"
 
@@ -148,6 +149,7 @@ int tls_backend_drain(grpc_tls_session *tls, grpc_buf *out) {
 }
 
 int tls_backend_handshake(grpc_tls_session *tls) {
+  ERR_clear_error();
   int ret = SSL_do_handshake(ssl(tls));
   if (ret == 1) {
     return 1;
@@ -157,6 +159,7 @@ int tls_backend_handshake(grpc_tls_session *tls) {
 }
 
 ssize_t tls_backend_read(grpc_tls_session *tls, void *buf, size_t len) {
+  ERR_clear_error();
   int ret = SSL_read(ssl(tls), buf, len > INT_MAX ? INT_MAX : (int)len);
   if (ret > 0) {
     return ret;
@@ -177,6 +180,7 @@ ssize_t tls_backend_write(grpc_tls_session *tls, const void *buf, size_t len) {
   size_t written = 0;
   while (written < len) {
     size_t n = len - written;
+    ERR_clear_error();
     int ret = SSL_write(ssl(tls), (const u8 *)buf + written, n > INT_MAX ? INT_MAX : (int)n);
     if (ret <= 0) {
       return -1;
@@ -187,5 +191,6 @@ ssize_t tls_backend_write(grpc_tls_session *tls, const void *buf, size_t len) {
 }
 
 void tls_backend_close_notify(grpc_tls_session *tls) {
+  ERR_clear_error();
   (void)SSL_shutdown(ssl(tls));
 }

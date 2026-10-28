@@ -92,6 +92,65 @@ void test_configurable_codecs_roundtrip(void) {
 }
 #endif
 
+#if defined(GRPC_ENABLE_ZLIB) || defined(GRPC_ENABLE_ZSTD) || defined(GRPC_ENABLE_SNAPPY)
+void test_decompression_limits(void) {
+  const grpc_compression_algorithm algorithms[] = {
+#if defined(GRPC_ENABLE_ZLIB)
+      GRPC_COMPRESS_GZIP, GRPC_COMPRESS_DEFLATE,
+#endif
+#if defined(GRPC_ENABLE_ZSTD)
+      GRPC_COMPRESS_ZSTD,
+#endif
+#if defined(GRPC_ENABLE_SNAPPY)
+      GRPC_COMPRESS_SNAPPY,
+#endif
+  };
+  uint8_t input[65536];
+  memset(input, 'x', sizeof(input));
+  const size_t limits[] = {0, 1, 255, 256, 4096, sizeof(input) - 1, sizeof(input), sizeof(input) + 1};
+  for (size_t codec = 0; codec < sizeof(algorithms) / sizeof(algorithms[0]); codec++) {
+    uint8_t *packed = nullptr;
+    size_t packed_len = 0;
+    TEST_ASSERT_EQUAL_INT(0, grpc_compress(algorithms[codec], GRPC_COMPRESSION_LEVEL_DEFAULT,
+        input, sizeof(input), &packed, &packed_len));
+    TEST_ASSERT_TRUE(packed_len < sizeof(input) / 2);
+    for (size_t i = 0; i < sizeof(limits) / sizeof(limits[0]); i++) {
+      uint8_t *output = nullptr;
+      size_t size = 123;
+      int rc = grpc_decompress_limited(algorithms[codec], packed, packed_len, &output, &size, limits[i]);
+      if (limits[i] < sizeof(input)) {
+        TEST_ASSERT_EQUAL_INT(5, rc);
+        TEST_ASSERT_NULL(output);
+        TEST_ASSERT_EQUAL_UINT64(0, size);
+      } else {
+        TEST_ASSERT_EQUAL_INT(0, rc);
+        TEST_ASSERT_EQUAL_UINT64(sizeof(input), size);
+        TEST_ASSERT_EQUAL_MEMORY(input, output, size);
+      }
+      grpc_free(output);
+    }
+    uint8_t *output = nullptr;
+    size_t size = 123;
+    TEST_ASSERT_NOT_EQUAL(0, grpc_decompress_limited(algorithms[codec], packed, packed_len - 1,
+        &output, &size, sizeof(input)));
+    TEST_ASSERT_NULL(output);
+    TEST_ASSERT_EQUAL_UINT64(0, size);
+    grpc_free(packed);
+    TEST_ASSERT_EQUAL_INT(0, grpc_compress(algorithms[codec], GRPC_COMPRESSION_LEVEL_DEFAULT,
+        input, 0, &packed, &packed_len));
+    TEST_ASSERT_EQUAL_INT(0, grpc_decompress_limited(algorithms[codec], packed, packed_len, &output, &size, 0));
+    TEST_ASSERT_EQUAL_UINT64(0, size);
+    grpc_free(output);
+    grpc_free(packed);
+    const uint8_t invalid[] = {0xff, 0xff, 0xff};
+    TEST_ASSERT_NOT_EQUAL(0, grpc_decompress_limited(algorithms[codec], invalid, sizeof(invalid),
+        &output, &size, sizeof(input)));
+    TEST_ASSERT_NULL(output);
+    TEST_ASSERT_EQUAL_UINT64(0, size);
+  }
+}
+#endif
+
 int main(void) {
   UNITY_BEGIN();
 #if defined(GRPC_ENABLE_ZLIB)
@@ -100,6 +159,7 @@ int main(void) {
 #endif
 #if defined(GRPC_ENABLE_ZLIB) || defined(GRPC_ENABLE_ZSTD) || defined(GRPC_ENABLE_SNAPPY)
   RUN_TEST(test_configurable_codecs_roundtrip);
+  RUN_TEST(test_decompression_limits);
 #endif
   return UNITY_END();
 }

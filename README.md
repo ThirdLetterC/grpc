@@ -165,6 +165,14 @@ if (compressed != nullptr)
 
 Use `GRPC_COMPRESS_GZIP` or `GRPC_COMPRESS_DEFLATE` with zlib levels `0` through `9`; use `GRPC_COMPRESSION_LEVEL_DEFAULT` for the library default. Zstandard accepts levels supported by the installed Zstandard library. Snappy has no level control and requires `GRPC_COMPRESSION_LEVEL_DEFAULT`. The legacy `grpc_message_compress_gzip()` and raw gzip functions remain available.
 
+Inbound decompression is bounded by `grpc_config.max_message_size` (including the
+5-byte gRPC message prefix), independently of the compressed size. Excessive
+expansion ends the call with `RESOURCE_EXHAUSTED`; malformed compressed input is
+rejected without growing buffers repeatedly. Raw-buffer consumers can use
+`grpc_decompress_limited(..., max_output)`, which returns `5` on output-limit
+exhaustion and leaves the output pointer null. The existing unbounded helpers
+remain available for caller-managed trusted buffers.
+
 Zstandard and Snappy are library-specific gRPC encodings. A peer must support the same encoding token to interoperate; standard gRPC implementations commonly support gzip and identity, while support for deflate, Zstandard and Snappy varies.
 
 Add `-lprotobuf-c` when the Protobuf-C helpers are built, `-lflatccrt` when the FlatBuffers helpers are, and the allocator library (`-lmimalloc` or `-ljemalloc`) when one is selected.

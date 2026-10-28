@@ -13,6 +13,10 @@ GRPC_API int grpc_compress(grpc_compression_algorithm algorithm, int level,
 GRPC_API int grpc_decompress(grpc_compression_algorithm algorithm,
                                    const uint8_t *in, size_t in_len, uint8_t **out,
                                    size_t *out_len);
+/** Bounded decoding with any supported codec. Returns 5 when output exceeds max_output.
+ * On failure, *out is nullptr and *out_len is zero. */
+GRPC_API int grpc_decompress_limited(grpc_compression_algorithm algorithm,
+    const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len, size_t max_output);
 /** Returns a compressed copy of msg using algorithm and level. */
 GRPC_API grpc_message *grpc_message_compress(const grpc_message *msg,
                                                        grpc_compression_algorithm algorithm,

@@ -1,5 +1,7 @@
 # gRPC
 
+[![CI](https://github.com/ThirdLetterC/grpc/actions/workflows/ci.yml/badge.svg)](https://github.com/ThirdLetterC/grpc/actions/workflows/ci.yml)
+
 **gRPC** is a lightweight, high-performance gRPC server library in C23 for Linux and Windows. It is built on [libuv](https://libuv.org/) and [nghttp2](https://nghttp2.org/), and exposes a simple poll-and-handle API: no hidden threads, no code generator, no callback soup. You decide how requests are scheduled, how memory is allocated, and how many cores to use.
 
 ---

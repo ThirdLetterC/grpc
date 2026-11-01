@@ -5,20 +5,14 @@
 #endif
 
 #include <assert.h>
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <uv.h>
 #include <nghttp2/nghttp2.h>
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <sys/types.h>
+#include "grpc_platform.h"
 
 #include "grpc.h"
 #include "common.h"
@@ -29,7 +23,10 @@
 
 /* ---- logging ------------------------------------------------------------- */
 
-[[gnu::format(printf, 3, 4)]] void server_log(grpc_server *server, grpc_log_level level,
+#ifndef _MSC_VER
+[[gnu::format(printf, 3, 4)]]
+#endif
+void server_log(grpc_server *server, grpc_log_level level,
                                               const char *fmt, ...);
 
 #define LOG_ERROR(server, fmt, ...) \
@@ -215,7 +212,6 @@ struct grpc_session {
   nghttp2_session *ngsession;
   /* Index in grpc_server.sessions. */
   size_t index;
-  int sockfd;
   socklen_t socklen;
   /* Parent server context. */
   grpc_server *server;
@@ -281,8 +277,8 @@ struct grpc_server {
 
   nghttp2_session_callbacks *ngcallbacks;
 
-  int ipv4_sockfd;
-  int ipv6_sockfd;
+  uv_os_sock_t ipv4_sockfd;
+  uv_os_sock_t ipv6_sockfd;
 
   uv_loop_t loop;
   uv_tcp_t ipv4_listener;

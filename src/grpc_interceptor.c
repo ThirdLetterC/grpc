@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
+#include "internal/grpc_platform.h"
 #include "core.h"
 #include "grpc_timeout.h"
 

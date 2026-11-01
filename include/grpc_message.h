@@ -30,7 +30,7 @@ struct grpc_message {
   int compression_level;
   /** The payload, aligned like ``malloc()`` memory, so formats that are read
    * in place (FlatBuffers) can use it directly. */
-  alignas(max_align_t) uint8_t data[];
+  alignas(grpc_max_align_t) uint8_t data[];
 };
 
 /**

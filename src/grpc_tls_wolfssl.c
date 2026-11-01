@@ -2,7 +2,7 @@
  * layer needed). The I/O callbacks move ciphertext through grpc_tls_io.
  * wolfSSL must be built with ALPN support (--enable-alpn). */
 #include <limits.h>
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
 #include "core.h"

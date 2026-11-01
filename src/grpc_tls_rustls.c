@@ -2,7 +2,7 @@
  * moved with rustls_connection_read_tls() and rustls_connection_write_tls()
  * callbacks. rustls only speaks TLS 1.2 and 1.3. */
 #include <errno.h>
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <stdio.h>
 #include <rustls.h>
 #include "core.h"

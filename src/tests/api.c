@@ -1,4 +1,4 @@
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,7 +207,7 @@ void test_messages(void) {
   TEST_ASSERT_EQUAL_UINT32(5, msg->len);
   TEST_ASSERT_EQUAL_UINT8(0, msg->cflag);
   TEST_ASSERT_EQUAL_MEMORY("hello", msg->data, 5);
-  TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)msg->data % alignof(max_align_t));
+  TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)msg->data % alignof(grpc_max_align_t));
   grpc_message_free(msg);
 
   msg = grpc_message_alloc(1000);

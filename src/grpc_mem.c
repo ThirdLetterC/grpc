@@ -2,6 +2,34 @@
 #include <string.h>
 #include "grpc_mem.h"
 
+#if defined(_MSC_VER) && !defined(GRPC_USE_MIMALLOC) && !defined(GRPC_USE_JEMALLOC)
+#include <malloc.h>
+
+/* MSVC requires aligned blocks to be freed/reallocated with the matching CRT
+ * functions. Use that allocation family for every default allocation. */
+static void *win_malloc(size_t size) {
+  return _aligned_malloc(size ? size : 1, _Alignof(grpc_max_align_t));
+}
+static void *win_calloc(size_t count, size_t size) {
+  if (size != 0 && count > SIZE_MAX / size)
+    return nullptr;
+  size_t bytes = count * size;
+  void *ptr = win_malloc(bytes);
+  if (ptr != nullptr)
+    memset(ptr, 0, bytes);
+  return ptr;
+}
+static void *win_realloc(void *ptr, size_t size) {
+  return _aligned_realloc(ptr, size, _Alignof(grpc_max_align_t));
+}
+static void *win_aligned_alloc(size_t alignment, size_t size) {
+  return _aligned_malloc(size ? size : 1, alignment);
+}
+static void win_free(void *ptr) {
+  _aligned_free(ptr);
+}
+#endif
+
 #if defined(GRPC_USE_MIMALLOC)
 #include <mimalloc.h>
 static const char default_allocator_name[] = "mimalloc";
@@ -14,6 +42,12 @@ static grpc_allocator current = {mi_malloc, mi_calloc, mi_realloc, mi_free,
 static const char default_allocator_name[] = "jemalloc";
 static const grpc_allocator default_allocator = {malloc, calloc, realloc, free, aligned_alloc};
 static grpc_allocator current = {malloc, calloc, realloc, free, aligned_alloc};
+#elif defined(_MSC_VER)
+static const char default_allocator_name[] = "libc";
+static const grpc_allocator default_allocator = {win_malloc, win_calloc, win_realloc, win_free,
+                                                 win_aligned_alloc};
+static grpc_allocator current = {win_malloc, win_calloc, win_realloc, win_free,
+                                 win_aligned_alloc};
 #else
 static const char default_allocator_name[] = "libc";
 static const grpc_allocator default_allocator = {malloc, calloc, realloc, free, aligned_alloc};

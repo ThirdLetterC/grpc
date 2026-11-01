@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include "core.h"
 
 enum { MAX_SYMBOL_LEN = 128 };

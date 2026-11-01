@@ -4,7 +4,6 @@
 #include <string.h>
 #include "core.h"
 
-int makenonblock(int sockfd);
 
 void session_close(grpc_session *session);
 

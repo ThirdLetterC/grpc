@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <unistd.h>
+#include <uv.h>
 #include "grpc.h"
 #include "grpc_timeout.h"
 #include "unity.h"
@@ -41,7 +41,7 @@ void test_timeout_parsing(void) {
 
 void test_time_now_ms(void) {
   uint64_t t1 = grpc_time_now_ms();
-  usleep(10000); // 10ms
+  uv_sleep(10);
   uint64_t t2 = grpc_time_now_ms();
   TEST_ASSERT_TRUE(t2 >= t1 + 9); // Allow small jitter
 }

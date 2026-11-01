@@ -10,7 +10,7 @@
  * Method (raw bytes, no protobuf):
  *   /example.Work/Reverse  unary: replies with the request reversed
  */
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,7 +104,9 @@ int main(int argc, char **argv) {
   if (nb_workers < 1 || nb_workers > 64)
     nb_workers = 4;
 
+#ifdef SIGPIPE
   signal(SIGPIPE, SIG_IGN);
+#endif
 
   g_server = grpc_server_new(&(grpc_config){.port = (uint16_t)port});
   if (g_server == nullptr)

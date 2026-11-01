@@ -233,18 +233,25 @@ GRPC_API grpc_err grpc_server_unregister(grpc_server *server, const char *path) 
 
 /* ---- setup ---------------------------------------------------------------------- */
 
+#ifdef _WIN32
+static void grpc_winsock_init(void) {
+  WSADATA data;
+  WSAStartup(MAKEWORD(2, 2), &data);
+}
+#endif
+
 /* binds and listens on one address. returns the socket or -1 */
-static int open_listener(grpc_server *server, int family, const char *addr, uint16_t port,
-                         int backlog) {
+static uv_os_sock_t open_listener(grpc_server *server, int family, const char *addr, uint16_t port,
+                                  int backlog) {
   struct sockaddr_storage ss = {};
-  socklen_t sslen;
+  int sslen;
   if (family == AF_INET) {
     struct sockaddr_in *sin = (struct sockaddr_in *)&ss;
     sin->sin_family = AF_INET;
     sin->sin_port = htons(port);
     if (inet_pton(AF_INET, addr, &sin->sin_addr) != 1) {
       LOG_ERROR(server, "invalid IPv4 address '%s'\n", addr);
-      return -1;
+      return GRPC_INVALID_SOCKET;
     }
     sslen = sizeof(*sin);
   } else {
@@ -253,41 +260,50 @@ static int open_listener(grpc_server *server, int family, const char *addr, uint
     sin6->sin6_port = htons(port);
     if (inet_pton(AF_INET6, addr, &sin6->sin6_addr) != 1) {
       LOG_ERROR(server, "invalid IPv6 address '%s'\n", addr);
-      return -1;
+      return GRPC_INVALID_SOCKET;
     }
     sslen = sizeof(*sin6);
   }
 
-  int fd = socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
-  if (fd == -1) {
-    LOG_ERROR(server, "socket: %s\n", strerror(errno));
-    return -1;
+#ifdef _WIN32
+  static uv_once_t winsock_once = UV_ONCE_INIT;
+  uv_once(&winsock_once, grpc_winsock_init);
+  uv_os_sock_t fd = WSASocketW(family, SOCK_STREAM, 0, NULL, 0,
+                              WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
+#else
+  uv_os_sock_t fd = socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#endif
+  if (fd == GRPC_INVALID_SOCKET) {
+    LOG_ERROR(server, "socket: %s\n", grpc_socket_error());
+    return GRPC_INVALID_SOCKET;
   }
-  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&(int){1}, sizeof(int));
+#ifdef SO_REUSEPORT
   /* lets one server per thread share the port; the kernel spreads connections */
-  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int));
+  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (const char *)&(int){1}, sizeof(int));
+#endif
   if (family == AF_INET6)
-    (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){1}, sizeof(int));
+    (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&(int){1}, sizeof(int));
 
   if (bind(fd, (struct sockaddr *)&ss, sslen) == -1) {
-    LOG_ERROR(server, "bind %s port %u: %s\n", addr, port, strerror(errno));
-    close(fd);
-    return -1;
+    LOG_ERROR(server, "bind %s port %u: %s\n", addr, port, grpc_socket_error());
+    grpc_socket_close(fd);
+    return GRPC_INVALID_SOCKET;
   }
   if (listen(fd, backlog) == -1) {
-    LOG_ERROR(server, "listen %s port %u: %s\n", addr, port, strerror(errno));
-    close(fd);
-    return -1;
+    LOG_ERROR(server, "listen %s port %u: %s\n", addr, port, grpc_socket_error());
+    grpc_socket_close(fd);
+    return GRPC_INVALID_SOCKET;
   }
   return fd;
 }
 
 /* hands an open socket to an initialized libuv listener, which then owns it */
-static bool start_listener(grpc_server *server, uv_tcp_t *listener, int *fd) {
+static bool start_listener(grpc_server *server, uv_tcp_t *listener, uv_os_sock_t *fd) {
   listener->data = server;
   if (uv_tcp_open(listener, *fd) != 0)
     return false;
-  *fd = -1;
+  *fd = GRPC_INVALID_SOCKET;
   return uv_listen((uv_stream_t *)listener, server->config.backlog, on_listener_connection) == 0;
 }
 
@@ -323,8 +339,8 @@ GRPC_API grpc_server *grpc_server_new(const grpc_config *config) {
   grpc_server *server = grpc_calloc(1, sizeof(*server));
   if (server == nullptr)
     return nullptr;
-  server->ipv4_sockfd = -1;
-  server->ipv6_sockfd = -1;
+  server->ipv4_sockfd = GRPC_INVALID_SOCKET;
+  server->ipv6_sockfd = GRPC_INVALID_SOCKET;
   server->next_deadline_ms = UINT64_MAX;
   pthread_mutex_init(&server->post_mutex, nullptr);
 
@@ -382,12 +398,12 @@ GRPC_API grpc_server *grpc_server_new(const grpc_config *config) {
     goto err;
 
   if (server->ipv4_addr != nullptr &&
-      (server->ipv4_sockfd =
-           open_listener(server, AF_INET, server->ipv4_addr, cfg->port, cfg->backlog)) == -1)
+      (server->ipv4_sockfd = open_listener(server, AF_INET, server->ipv4_addr, cfg->port,
+                                           cfg->backlog)) == GRPC_INVALID_SOCKET)
     goto err;
   if (server->ipv6_addr != nullptr &&
-      (server->ipv6_sockfd =
-           open_listener(server, AF_INET6, server->ipv6_addr, cfg->port, cfg->backlog)) == -1)
+      (server->ipv6_sockfd = open_listener(server, AF_INET6, server->ipv6_addr, cfg->port,
+                                           cfg->backlog)) == GRPC_INVALID_SOCKET)
     goto err;
 
   if (uv_loop_init(&server->loop) != 0)
@@ -406,14 +422,14 @@ GRPC_API grpc_server *grpc_server_new(const grpc_config *config) {
   server->async.data = server;
   server->async_active = true;
 
-  if (server->ipv4_sockfd != -1) {
+  if (server->ipv4_sockfd != GRPC_INVALID_SOCKET) {
     if (uv_tcp_init(&server->loop, &server->ipv4_listener) != 0)
       goto err;
     server->ipv4_listener_active = true;
     if (!start_listener(server, &server->ipv4_listener, &server->ipv4_sockfd))
       goto err;
   }
-  if (server->ipv6_sockfd != -1) {
+  if (server->ipv6_sockfd != GRPC_INVALID_SOCKET) {
     if (uv_tcp_init(&server->loop, &server->ipv6_listener) != 0)
       goto err;
     server->ipv6_listener_active = true;
@@ -480,10 +496,10 @@ GRPC_API void grpc_server_free(grpc_server *server) {
     uv_close((uv_handle_t *)&server->deadline_timer, nullptr);
   if (server->async_active)
     uv_close((uv_handle_t *)&server->async, nullptr);
-  if (server->ipv4_sockfd != -1)
-    close(server->ipv4_sockfd);
-  if (server->ipv6_sockfd != -1)
-    close(server->ipv6_sockfd);
+  if (server->ipv4_sockfd != GRPC_INVALID_SOCKET)
+    grpc_socket_close(server->ipv4_sockfd);
+  if (server->ipv6_sockfd != GRPC_INVALID_SOCKET)
+    grpc_socket_close(server->ipv6_sockfd);
 
   if (server->loop_initialized) {
     int drain_limit = 1000;

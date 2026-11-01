@@ -32,7 +32,7 @@ void test_fb_pack_and_unpack(void) {
   TEST_ASSERT_EQUAL_UINT8(0, msg->cflag);
   TEST_ASSERT_GREATER_THAN_UINT32(0, msg->len);
   /* read in place, so the payload must be aligned */
-  TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)msg->data % alignof(max_align_t));
+  TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)msg->data % alignof(grpc_max_align_t));
 
   TEST_ASSERT_EQUAL_INT(flatcc_verify_ok, GRPC_FB_VERIFY(test_Echo, msg));
   test_Echo_table_t echo = GRPC_FB_UNPACK(test_Echo, msg);

@@ -6,21 +6,13 @@
 #include <errno.h>
 #include <time.h>
 #include <stddef.h>
-#include <strings.h>
+#include "internal/grpc_platform.h"
 #include <stdio.h>
 #include "core.h"
 #include "grpc_header.h"
 #include "internal_nghttp2_callbacks.h"
 #include "internal_helpers.h"
 #include "internal_tls.h"
-
-int makenonblock(int sockfd) {
-  int res = fcntl(sockfd, F_GETFL, 0);
-  if (res == -1)
-    return 1;
-  res = (res | O_NONBLOCK);
-  return fcntl(sockfd, F_SETFL, res);
-}
 
 int list_cmp_ezheader_name(const void *data, const void *userdata) {
   const grpc_header *a = data;
@@ -98,7 +90,11 @@ char *ezgetdt(char *buf, size_t len) {
 #else
   time_t t = time(nullptr);
   struct tm stm;
+#ifdef _WIN32
+  localtime_s(&stm, &t);
+#else
   localtime_r(&t, &stm);
+#endif
   snprintf(buf, len, "%d/%02d/%02d %02d:%02d:%02d", stm.tm_year + 1900, stm.tm_mon + 1, stm.tm_mday,
            stm.tm_hour, stm.tm_min, stm.tm_sec);
 #endif
@@ -133,7 +129,6 @@ static void on_session_close(uv_handle_t *handle) {
 
   buf_free(&session->obuf);
   buf_free(&session->wbuf);
-  session->sockfd = -1;
   session->nb_streams = 0;
   session->tls_handshake_done = false;
   session->is_writing = false;
@@ -392,10 +387,9 @@ void on_listener_connection(uv_stream_t *listener, int status) {
   server->ready_events++;
 
   uv_os_fd_t fd;
-  if (uv_fileno((uv_handle_t *)&session->tcp, &fd) == 0) {
-    session->sockfd = fd;
-    (void)setsockopt(session->sockfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&(int){1}, sizeof(int));
-  }
+  if (uv_fileno((uv_handle_t *)&session->tcp, &fd) == 0)
+    (void)setsockopt((uv_os_sock_t)(uintptr_t)fd, SOL_SOCKET, SO_KEEPALIVE, (const char *)&(int){1},
+                     sizeof(int));
   (void)uv_tcp_nodelay(&session->tcp, 1);
   session_set_peer(session);
   LOG_DEBUG(server, "connection from %s\n", session->peer);

@@ -29,7 +29,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <strings.h>
+#include "internal/grpc_platform.h"
 
 #include "core.h"
 #include "internal_helpers.h"

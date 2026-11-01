@@ -104,7 +104,9 @@ int main(int argc, char *argv[]) {
   grpc_server_handle(g_server, "/greeter.Greeter/SayManyHellos", say_many_hellos, nullptr);
   printf("[server] FlatBuffers Greeter listening on port %d\n", port);
 
+#ifdef SIGPIPE
   signal(SIGPIPE, SIG_IGN);
+#endif
   signal(SIGINT, sig_handler);
   signal(SIGTERM, sig_handler);
 

@@ -3,7 +3,7 @@
  *   ./grpc_server.bin [port] [quiet] [tls] [cert] [key]
  *   THREADS=N ./grpc_server.bin   one server (event loop) per thread on the same port
  */
-#include <pthread.h>
+#include "internal/grpc_threads.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -166,7 +166,7 @@ static void say_hello_with_error(grpc_call *call,
 /* 7. SayHelloSlow: answered by a worker thread */
 static void *slow_worker(void *arg) {
   grpc_call *call = arg;
-  nanosleep(&(struct timespec){.tv_nsec = 300 * 1000 * 1000}, nullptr);
+  uv_sleep(300);
 
   Helloworld__HelloRequest *req = GRPC_PB_UNPACK(
       Helloworld__HelloRequest, &helloworld__hello_request__descriptor, grpc_call_request(call));
@@ -279,6 +279,12 @@ int main(int argc, char *argv[]) {
   int nb_threads = getenv("THREADS") != nullptr ? atoi(getenv("THREADS")) : 1;
   if (nb_threads < 1 || nb_threads > MAX_SERVERS)
     nb_threads = 1;
+#ifdef _WIN32
+  if (nb_threads > 1) {
+    fprintf(stderr, "THREADS must be 1 on Windows (SO_REUSEPORT is unavailable)\n");
+    return 1;
+  }
+#endif
 
   /* every server binds the same port, SO_REUSEPORT spreads the connections */
   for (; g_nb_servers < nb_threads; g_nb_servers++) {
@@ -294,7 +300,9 @@ int main(int argc, char *argv[]) {
     printf("[server] Greeter listening on port %d%s with %d loop(s)\n", port,
            use_tls ? " (TLS)" : "", nb_threads);
 
+#ifdef SIGPIPE
   signal(SIGPIPE, SIG_IGN);
+#endif
   signal(SIGINT, on_signal);
   signal(SIGTERM, on_signal);
 

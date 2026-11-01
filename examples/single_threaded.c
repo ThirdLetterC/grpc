@@ -60,7 +60,9 @@ static void handle_event(const grpc_event *event) {
 }
 
 int main(int argc, char **argv) {
+#ifdef SIGPIPE
   signal(SIGPIPE, SIG_IGN);
+#endif
   signal(SIGINT, on_signal);
   signal(SIGTERM, on_signal);
 

@@ -1,6 +1,6 @@
 # gRPC
 
-**gRPC** is a lightweight, high-performance gRPC server library in C23 for Linux. It is built on [libuv](https://libuv.org/) and [nghttp2](https://nghttp2.org/), and exposes a simple poll-and-handle API: no hidden threads, no code generator, no callback soup. You decide how requests are scheduled, how memory is allocated, and how many cores to use.
+**gRPC** is a lightweight, high-performance gRPC server library in C23 for Linux and Windows. It is built on [libuv](https://libuv.org/) and [nghttp2](https://nghttp2.org/), and exposes a simple poll-and-handle API: no hidden threads, no code generator, no callback soup. You decide how requests are scheduled, how memory is allocated, and how many cores to use.
 
 ---
 
@@ -50,7 +50,7 @@ Each `grpc_server` owns one libuv loop, driven by `grpc_server_poll()`:
 
 ### Using more cores
 
-A libuv loop runs on one thread. To use more cores, create one server per thread on the same port. The listening sockets use `SO_REUSEPORT`, so the kernel spreads incoming connections across the loops. Health and reflection state is shared and thread-safe. The example server does this when started with `THREADS=N`.
+A libuv loop runs on one thread. On Unix, create one server per thread on the same port to use more cores. The listening sockets use `SO_REUSEPORT`, so the kernel spreads incoming connections across the loops. Health and reflection state is shared and thread-safe. The example server does this when started with `THREADS=N`. On Windows, use one listening server with worker threads, as in `examples/multi_threaded.c`.
 
 A single HTTP/2 connection always stays on one loop, so multiple loops only help when clients open multiple connections.
 
@@ -90,15 +90,14 @@ Measured on localhost with `ghz` sending unary `SayHello` calls to the Release e
 
 ## Requirements & Dependencies
 
-- **Platform**: Linux.
-- **Compiler**: GCC 11+ or Clang 14+ with C23 support (`-std=c23`, or `-std=c2x` on older compilers).
+- **Platform**: Linux or Windows.
+- **Compiler**: GCC 11+ or Clang 14+ with C23 support (`-std=c23`, or `-std=c2x` on older compilers), or MSVC 19.44+ on Windows (see below).
 - **Build system**: CMake 3.20 or newer.
 - **Logger dependency**: CMake fetches the pinned [ulog](https://github.com/ThirdLetterC/ulog) source at configure time. For offline or local development, set `FETCHCONTENT_SOURCE_DIR_ULOG` to an existing checkout.
 - **Required libraries**:
   - `libuv` (event loop)
   - `libnghttp2` (HTTP/2)
-  - `libuuid` (session identifiers)
-  - `pthread`
+  - `pthread` on Unix (native Windows synchronization is used on Windows)
 - **Optional libraries** (detected automatically when installed):
   - A TLS library for TLS: OpenSSL by default, or one of the [other backends](#tls-backends)
   - `zlib` for gzip and deflate compression
@@ -113,7 +112,7 @@ On Debian / Ubuntu:
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential pkg-config libuv1-dev libnghttp2-dev uuid-dev \
+  build-essential pkg-config libuv1-dev libnghttp2-dev \
   zlib1g-dev libzstd-dev libsnappy-dev libssl-dev libprotobuf-c-dev protobuf-c-compiler \
   libmimalloc-dev libjemalloc-dev   # optional allocators
 ```
@@ -147,6 +146,38 @@ ctest --test-dir build --output-on-failure
 ```
 
 The CMake targets are `grpc_static` and `grpc_shared`. The `grpc::grpc` alias selects the static library and carries its required link dependencies.
+
+### Windows with MSVC
+
+Use Visual Studio 2022 17.14 (MSVC 19.44) or newer with the Desktop development
+with C++ workload and Windows SDK. The build uses `/std:clatest` and
+`/experimental:c11atomics`. Install the native dependencies with
+[vcpkg](https://github.com/microsoft/vcpkg), then run these commands in Developer PowerShell for Visual Studio
+(replace `C:/vcpkg` with your vcpkg directory):
+
+```powershell
+C:/vcpkg/vcpkg.exe install libuv:x64-windows nghttp2:x64-windows openssl:x64-windows zlib:x64-windows zstd:x64-windows snappy:x64-windows
+cmake -S . -B build -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+  "-DGRPC_HOST_OPENSSL_EXECUTABLE=C:/Program Files/Git/usr/bin/openssl.exe" `
+  -DGRPC_BUILD_INTEGRATION_TESTS=OFF
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+The static library is `grpc.lib`; the shared library is `grpc.dll` with import
+library `grpc_dll.lib`. CMake targets carry the required dependencies, and vcpkg
+copies dependency DLLs beside the built executables. pkg-config and libuuid are
+not required. OpenSSL and `GRPC_TLS_BACKEND=none` are covered by Windows CI.
+AddressSanitizer through `GRPC_ASAN` currently requires GCC or Clang.
+The jemalloc allocator and rustls backend currently require Unix.
+
+To run the example integration tests, install Python and `pip install grpcio`,
+then configure with `-DGRPC_BUILD_INTEGRATION_TESTS=ON`. TLS unit tests also need
+the `openssl` command; the commands above use the copy bundled with Git for
+Windows (adjust its path if Git is installed elsewhere). Windows does not provide `SO_REUSEPORT` load
+balancing; use one server per listening address/port (`THREADS=1` in the
+Protobuf-C example), with worker threads as in `examples/multi_threaded.c`.
 
 ### Compression
 
@@ -455,6 +486,7 @@ Every push and pull request is tested with GitHub Actions ([`.github/workflows/c
 
 - **OS**: Ubuntu 24.04 and Ubuntu 22.04
 - **Compilers**: GCC and Clang
+- **Windows**: MSVC Debug and Release, static libraries and DLLs, OpenSSL and cleartext
 - **Allocators**: libc `malloc`, `mimalloc` and `jemalloc`
 - **Sanitizers**: AddressSanitizer builds (`GRPC_ASAN=ON`)
 - **FlatBuffers**: flatcc built from source, with GCC, Clang and AddressSanitizer

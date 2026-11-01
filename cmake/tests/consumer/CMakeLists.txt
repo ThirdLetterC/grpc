@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.20)
+project(grpc_consumer_test LANGUAGES C CXX)
+
+include(CTest)
+# A parent may already own these generic developer target names.
+add_custom_target(format)
+if(MSVC)
+  set(CMAKE_REQUIRED_FLAGS "/DGRPC_PARENT_PROBE")
+else()
+  set(CMAKE_REQUIRED_FLAGS "-DGRPC_PARENT_PROBE")
+endif()
+set(parent_probe_flags "${CMAKE_REQUIRED_FLAGS}")
+set(parent_build_type "${CMAKE_BUILD_TYPE}")
+
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../.." grpc-build)
+
+if(NOT "${CMAKE_REQUIRED_FLAGS}" STREQUAL "${parent_probe_flags}")
+  message(FATAL_ERROR "grpc changed the parent's compiler probe flags")
+endif()
+if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "${parent_build_type}")
+  message(FATAL_ERROR "grpc changed the parent's build type")
+endif()
+if(GRPC_BUILD_TESTS OR GRPC_BUILD_EXAMPLES OR GRPC_BUILD_INTEGRATION_TESTS OR GRPC_BUILD_DEVELOPER_TARGETS)
+  message(FATAL_ERROR "grpc enabled standalone-only defaults in an embedded build")
+endif()
+
+add_executable(unrelated unrelated.cpp)
+add_executable(consumer consumer.c)
+target_link_libraries(consumer PRIVATE grpc::static)
+add_test(NAME consumer COMMAND consumer)

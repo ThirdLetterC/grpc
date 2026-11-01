@@ -145,7 +145,28 @@ Run the registered unit and integration tests with:
 ctest --test-dir build --output-on-failure
 ```
 
-The CMake targets are `grpc_static` and `grpc_shared`. The `grpc::grpc` alias selects the static library and carries its required link dependencies.
+The CMake targets are `grpc_static` and `grpc_shared`. The `grpc::grpc` and
+`grpc::static` aliases select the static library; `grpc::shared` selects the
+shared library. Each carries its required link dependencies.
+
+For a static-only optimized build, enable IPO/LTO with the compiler support check:
+
+```bash
+cmake -S . -B build-ipo -DGRPC_IPO=ON -DGRPC_BUILD_SHARED=OFF
+cmake --build build-ipo --config Release --parallel
+```
+
+Include the same dependency/toolchain flags as your normal build, such as the
+vcpkg toolchain on Windows.
+
+IPO applies to Release, RelWithDebInfo and MinSizeRel. MSVC requires the
+static-only setting because CMake's automatic DLL export scanner cannot read
+`/GL` objects. GCC and Clang can also use IPO with the shared library enabled.
+
+The project can be included with `add_subdirectory(path/to/grpc)` and linked
+through `grpc::grpc`. In that case, tests, examples and formatting targets
+default to OFF, and the parent project's build type and directory compiler
+options are preserved. Compiler requirements are attached to grpc targets.
 
 ### Windows with MSVC
 
@@ -213,6 +234,8 @@ Add `-lprotobuf-c` when the Protobuf-C helpers are built, `-lflatccrt` when the 
 | CMake setting or command | Description |
 |:---|:---|
 | `cmake --build build --target check` | Builds and runs registered unit and integration tests |
+| `-DGRPC_BUILD_SHARED=OFF` | Builds only the static library |
+| `-DGRPC_IPO=ON` | Enables compiler-checked IPO/LTO in optimized configurations; MSVC also requires `GRPC_BUILD_SHARED=OFF` |
 | `-DGRPC_ALLOCATOR=mimalloc` | Uses `mimalloc`; also accepts `jemalloc` or `default` |
 | `-DGRPC_TLS_BACKEND=<backend>` | Selects `AUTO`, `openssl`, `libressl`, `boringssl`, `awslc`, `wolfssl`, `gnutls`, `rustls` or `none` |
 | `-DGRPC_TLS_PREFIX=<dir>` | Searches `<dir>` for the selected TLS library |
@@ -225,9 +248,16 @@ Add `-lprotobuf-c` when the Protobuf-C helpers are built, `-lflatccrt` when the 
 | `-DGRPC_ASAN=ON` | Builds with AddressSanitizer |
 | `-DGRPC_BUILD_INTEGRATION_TESTS=OFF` | Skips Python client integration tests |
 | `-DGRPC_BUILD_EXAMPLES=OFF` | Skips example server targets |
+| `-DGRPC_BUILD_DEVELOPER_TARGETS=OFF` | Skips source formatting targets |
 | `cmake --build build --target format` | Formats C sources with `clang-format` |
 | `cmake --build build --target format-check` | Checks C formatting with `clang-format` |
 | `cmake --build build --target clean` | Removes build output |
+
+Feature values (`AUTO`, `ON`, `OFF`), TLS backend names and allocator names are
+case-insensitive. An optional dependency set to `OFF` is not searched for.
+The `check` target also works with examples disabled; embedded builds expose
+it as `grpc_check`. To select tests directly, use `ctest --test-dir build -C Release
+-L unit` or `-L integration`.
 
 ### TLS backends
 

@@ -8,13 +8,18 @@ on:
 
 jobs:
   msvc:
-    name: Windows / MSVC / ${{ matrix.config }} / ${{ matrix.tls }}
+    name: Windows / MSVC / ${{ matrix.config }} / ${{ matrix.tls }} / ${{ matrix.mode }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         config: [Debug, Release]
         tls: [none, openssl]
+        mode: [default]
+        include:
+          - config: Release
+            tls: none
+            mode: ipo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,15 +38,27 @@ jobs:
             "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             "-DGRPC_HOST_OPENSSL_EXECUTABLE=C:/Program Files/Git/usr/bin/openssl.exe" `
             -DGRPC_TLS_BACKEND=${{ matrix.tls }} `
+            -DGRPC_IPO=${{ matrix.mode == 'ipo' && 'ON' || 'OFF' }} `
+            -DGRPC_BUILD_SHARED=${{ matrix.mode == 'ipo' && 'OFF' || 'ON' }} `
+            -DGRPC_BUILD_EXAMPLES=${{ matrix.mode == 'ipo' && 'OFF' || 'ON' }} `
             -DGRPC_PROTOBUF_C=OFF -DGRPC_FLATCC=OFF `
             -DGRPC_ZLIB=ON -DGRPC_ZSTD=ON -DGRPC_SNAPPY=ON
-      - name: Build
-        run: cmake --build build --config ${{ matrix.config }} --parallel
-      - name: Test static library, DLL and example servers
-        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+      - name: Build and test
+        run: cmake --build build --config ${{ matrix.config }} --target check --parallel
+      - name: Verify add_subdirectory consumption
+        if: matrix.config == 'Release' && matrix.tls == 'openssl' && matrix.mode == 'default'
+        shell: pwsh
+        run: |
+          cmake -S cmake/tests/consumer -B build-consumer -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DGRPC_TLS_BACKEND=none -DGRPC_PROTOBUF_C=OFF -DGRPC_FLATCC=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-consumer --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-consumer -C Release --output-on-failure
 
   build-and-test:
-    name: ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.allocator }}
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.allocator }} / IPO=${{ matrix.ipo || 'OFF' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -56,6 +73,10 @@ jobs:
           - os: ubuntu-24.04
             compiler: gcc
             allocator: jemalloc
+          - os: ubuntu-24.04
+            compiler: gcc
+            allocator: default
+            ipo: 'ON'
 
     steps:
       - name: Checkout repository
@@ -95,6 +116,7 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_C_COMPILER=${{ matrix.compiler }} \
+            -DGRPC_IPO=${{ matrix.ipo || 'OFF' }} \
             -DGRPC_ALLOCATOR=${{ matrix.allocator }}
           cmake --build build --parallel 2
 

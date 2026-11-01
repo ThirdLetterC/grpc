@@ -149,6 +149,12 @@ The CMake targets are `grpc_static` and `grpc_shared`. The `grpc::grpc` and
 `grpc::static` aliases select the static library; `grpc::shared` selects the
 shared library. Each carries its required link dependencies.
 
+Include `grpc.h` (or just `grpc_version.h`) and call `grpc_version()` to get the
+linked library's version, currently `"1.0.0"`. The `GRPC_VERSION_STRING`,
+`GRPC_VERSION_MAJOR`, `GRPC_VERSION_MINOR` and `GRPC_VERSION_PATCH` macros identify
+the headers used at compile time. CMake generates these constants from the
+project version and supplies the generated header's include path through its targets.
+
 For a static-only optimized build, enable IPO/LTO with the compiler support check:
 
 ```bash

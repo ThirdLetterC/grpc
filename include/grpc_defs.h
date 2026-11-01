@@ -4,9 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* MSVC's C headers do not provide max_align_t. Its most aligned scalar is
+/* MSVC's C-compatible headers do not provide max_align_t. Its most aligned scalar is
  * double (also the type used by the MSVC C++ library for max_align_t). */
-#if defined(_MSC_VER) && !defined(__cplusplus)
+#if defined(_MSC_VER)
 typedef double grpc_max_align_t;
 #else
 typedef max_align_t grpc_max_align_t;

@@ -1,0 +1,7 @@
+#pragma once
+
+/* Generated from the CMake project version; do not edit the generated file. */
+#define GRPC_VERSION_STRING "@grpc_VERSION@"
+#define GRPC_VERSION_MAJOR @grpc_VERSION_MAJOR@
+#define GRPC_VERSION_MINOR @grpc_VERSION_MINOR@
+#define GRPC_VERSION_PATCH @grpc_VERSION_PATCH@

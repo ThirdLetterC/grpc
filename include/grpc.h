@@ -2,6 +2,7 @@
 #pragma once
 
 #include "grpc_defs.h"
+#include "grpc_version.h"
 #include "grpc_error.h"
 #include "grpc_status.h"
 #include "grpc_mem.h"

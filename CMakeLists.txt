@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(grpc LANGUAGES C)
+project(grpc VERSION 1.0.0 LANGUAGES C)
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   set(GRPC_IS_TOP_LEVEL ON)
@@ -97,6 +97,11 @@ include(cmake/GrpcUlog.cmake)
 
 include(cmake/GrpcDependencies.cmake)
 
+set(GRPC_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+file(MAKE_DIRECTORY "${GRPC_GENERATED_INCLUDE_DIR}")
+configure_file(include/grpc_version_config.h.in
+  "${GRPC_GENERATED_INCLUDE_DIR}/grpc_version_config.h" @ONLY)
+
 set(GRPC_SOURCES
   src/grpc_call.c
   src/grpc_compression.c
@@ -112,6 +117,7 @@ set(GRPC_SOURCES
   src/grpc_status_details.c
   src/grpc_timeout.c
   src/grpc_tls.c
+  src/grpc_version.c
   src/internal_helpers.c
   src/internal_nghttp2_callbacks.c
 )
@@ -127,7 +133,8 @@ endif()
 
 add_library(grpc_objects OBJECT ${GRPC_SOURCES})
 set_target_properties(grpc_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(grpc_objects PUBLIC include PRIVATE "${ulog_SOURCE_DIR}/include")
+target_include_directories(grpc_objects PUBLIC include "${GRPC_GENERATED_INCLUDE_DIR}"
+  PRIVATE "${ulog_SOURCE_DIR}/include")
 if(MSVC)
   target_include_directories(grpc_objects BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/ulog")
 endif()
@@ -146,10 +153,10 @@ target_compile_definitions(grpc_objects PRIVATE
   ULOG_BUILD_EXTRA_OUTPUTS=1 ULOG_BUILD_TOPICS_MODE=2 ULOG_BUILD_COLOR=0
   ULOG_BUILD_SOURCE_LOCATION=0 ULOG_BUILD_TIME=0 ULOG_BUILD_WARN_NOT_ENABLED=0)
 if(NOT GRPC_HAS_NULLPTR)
-  target_compile_definitions(grpc_objects PUBLIC "nullptr=((void*)0)")
+  target_compile_definitions(grpc_objects PUBLIC "$<$<COMPILE_LANGUAGE:C>:nullptr=((void*)0)>")
 endif()
 if(NOT GRPC_HAS_ALIGNOF)
-  target_compile_definitions(grpc_objects PUBLIC "alignof=_Alignof")
+  target_compile_definitions(grpc_objects PUBLIC "$<$<COMPILE_LANGUAGE:C>:alignof=_Alignof>")
 endif()
 if(GRPC_ALLOCATOR_DEFINE)
   target_compile_definitions(grpc_objects PUBLIC "${GRPC_ALLOCATOR_DEFINE}")
@@ -186,7 +193,10 @@ set_target_properties(grpc_static PROPERTIES OUTPUT_NAME grpc)
 set(GRPC_LIBRARY_TARGETS grpc_static)
 if(GRPC_BUILD_SHARED)
   add_library(grpc_shared SHARED $<TARGET_OBJECTS:grpc_objects>)
-  set_target_properties(grpc_shared PROPERTIES OUTPUT_NAME grpc)
+  set_target_properties(grpc_shared PROPERTIES
+    OUTPUT_NAME grpc
+    VERSION "${PROJECT_VERSION}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}")
   if(WIN32)
     # The DLL import library and the static archive must not both be grpc.lib.
     set_target_properties(grpc_shared PROPERTIES ARCHIVE_OUTPUT_NAME grpc_dll
@@ -222,6 +232,7 @@ target_link_libraries(grpc_objects PRIVATE ${GRPC_LINK_LIBRARIES})
 foreach(library_target IN LISTS GRPC_LIBRARY_TARGETS)
   target_link_libraries(${library_target} PUBLIC ${GRPC_LINK_LIBRARIES})
   target_include_directories(${library_target} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+  target_include_directories(${library_target} PUBLIC $<BUILD_INTERFACE:${GRPC_GENERATED_INCLUDE_DIR}>)
   if(GRPC_FLATCC_ENABLED)
     target_include_directories(${library_target} PUBLIC $<BUILD_INTERFACE:${FLATCC_INCLUDE_DIR}>)
   endif()
@@ -256,9 +267,17 @@ if(GRPC_BUILD_TESTS)
     set(GRPC_TEST_TARGETS "${GRPC_TEST_TARGETS}" PARENT_SCOPE)
   endfunction()
 
-  foreach(name IN ITEMS api list mem metadata timeout compression health interceptor status_details reflection)
+  foreach(name IN ITEMS api list mem metadata timeout compression health interceptor status_details reflection version)
     grpc_add_unit_test(${name} "src/tests/${name}.c")
   endforeach()
+
+  if(GRPC_BUILD_SHARED)
+    add_executable(test_version_shared src/tests/version.c src/tests/unity/unity.c)
+    target_include_directories(test_version_shared PRIVATE src/tests/unity)
+    target_link_libraries(test_version_shared PRIVATE grpc_shared)
+    add_test(NAME version_shared COMMAND test_version_shared)
+    list(APPEND GRPC_TEST_TARGETS test_version_shared)
+  endif()
 
   if(WIN32 AND GRPC_BUILD_SHARED)
     # Exercise the DLL import library as well as the default static target.

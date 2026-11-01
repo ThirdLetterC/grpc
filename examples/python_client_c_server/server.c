@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <uv.h>
 
 #include "grpc.h"
 #include "helloworld.pb-c.h"
